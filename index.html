@@ -1,0 +1,523 @@
+<!DOCTYPE html>
+<html lang="my">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>POS Cloud – v3 (Full • Roles • Reports • Realtime Settings)</title>
+<style>
+  :root{--bg:#0b1220;--card:#111a2e;--muted:#9db1d1;--text:#e8f0ff;--border:#20304f;--pill:#0f1c37}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,Segoe UI,Inter,Arial,sans-serif;font-size:14px}
+  header{padding:14px 18px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;background:#0c152b;position:sticky;top:0;z-index:2}
+  h1{margin:0;font-size:18px;font-weight:800;letter-spacing:.3px}
+  .pill{display:inline-flex;gap:6px;align-items:center;padding:6px 10px;background:var(--pill);border:1px solid var(--border);border-radius:999px;color:#cfe0ff;font-size:12px}
+  .btn{appearance:none;border:1px solid var(--border);background:#0e1a33;color:#eaf1ff;padding:9px 12px;border-radius:10px;cursor:pointer}
+  .btn.primary{background:#1954cc;border-color:#2b72ff}
+  .toolbar{display:flex;gap:10px;flex-wrap:wrap}
+  .wrap{padding:18px;display:grid;grid-template-columns:1.2fr .8fr;gap:18px}
+  @media(max-width:980px){.wrap{grid-template-columns:1fr}}
+  .card{background:#111a2e;border:1px solid var(--border);border-radius:14px}
+  .card .body{padding:16px}
+  .row{display:grid;grid-template-columns:repeat(12,1fr);gap:10px}
+  label{font-size:12px;color:var(--muted)}
+  input,textarea,select{width:100%;padding:10px 12px;border:1px solid var(--border);background:#091226;color:#e8f0ff;border-radius:10px;outline:none}
+  textarea{min-height:74px;resize:vertical}
+  table{width:100%;border-collapse:collapse;margin-top:10px}
+  th,td{padding:10px;border-bottom:1px dashed #233455;text-align:left;vertical-align:top}
+  thead th{color:#cfe0ff}
+  .right{text-align:right}
+  .muted{color:#9db1d1}
+  .invoiceBox{background:#0b1426;border:1px solid var(--border);border-radius:12px;padding:16px}
+  .footerThanks{margin-top:10px;border-top:1px solid #233455;padding-top:8px;text-align:center;font-weight:700}
+  .badge{display:inline-block;padding:2px 8px;border-radius:999px;border:1px solid var(--border);background:#0e1a33;color:#cfe0ff;font-size:11px}
+  .modal{position:fixed;inset:0;background:rgba(0,0,0,.5);display:none;align-items:center;justify-content:center;padding:20px;z-index:30}
+  .modal.open{display:flex}
+  .dialog{background:#111a2e;border:1px solid var(--border);border-radius:14px;max-width:1100px;width:100%;padding:16px}
+  .dialog h3{margin:0 0 10px;color:#cfe0ff}
+  .grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+  .grid2{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
+  .scroll{max-height:360px;overflow:auto;border:1px solid var(--border);border-radius:10px}
+  @media print{.no-print,header,.modal{display:none!important} body{background:#fff;color:#000} .card{border:0;background:#fff} .wrap{display:block;padding:0}}
+</style>
+<script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+</head>
+<body>
+  <header>
+    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+      <h1>POS Cloud – Online Shop</h1>
+      <span class="pill">Currency:
+        <select id="currency" style="background:transparent;border:0;color:#cfe0ff">
+          <option value="MMK" selected>MMK (Ks)</option>
+          <option value="THB">THB (฿)</option>
+          <option value="USD">USD ($)</option>
+        </select>
+      </span>
+      <span class="pill">Invoice: <b id="invoiceNo">—</b></span>
+      <span class="pill">Date/Time: <span id="dateTime">—</span></span>
+      <span class="pill">User: <b id="who">—</b> <i id="whoRole" style="font-style:normal;opacity:.8"></i></span>
+      <span class="pill">Cloud: <b id="cloudState">signed-out</b></span>
+    </div>
+    <div class="toolbar no-print">
+      <button class="btn" id="btnNew">New Order</button>
+      <button class="btn" id="btnReports">Reports</button>
+      <button class="btn" id="btnSettings">Settings</button>
+      <button class="btn primary" id="btnPrint">Print / Save PDF</button>
+      <button class="btn" id="btnJPEG">Save JPEG</button>
+      <span class="pill">Order ID <input id="orderId" placeholder="(after save)" style="width:160px;background:transparent;border:0;border-bottom:1px dashed #335a9e;color:#cfe0ff"></span>
+      <button class="btn" id="btnSaveCloud" disabled>Save to Cloud</button>
+      <button class="btn" id="btnLoadCloud" disabled>Load by ID</button>
+    </div>
+  </header>
+
+  <div class="wrap">
+    <!-- Left: Order Form -->
+    <div class="card"><div class="body">
+      <h2>Customer & Order <span id="staffBadge" class="badge" style="display:none">STAFF MODE</span></h2>
+      <div class="row">
+        <div style="grid-column:span 4"><label>Staff ID</label><select id="staffId"></select></div>
+        <div style="grid-column:span 8"><label>Customer Name</label><input id="custName" placeholder="Mg Mg"></div>
+
+        <div style="grid-column:span 6"><label>Customer Phone</label><input id="custPhone" placeholder="09xxxxxxxxx"></div>
+        <div style="grid-column:span 6"><label>Facebook Account (optional)</label><input id="custFB" placeholder="facebook.com/username or @username"></div>
+
+        <div style="grid-column:span 12"><label>Customer Address (လိပ်စာ)</label>
+          <textarea id="custAddr" placeholder="Room/House No., Street, Township, City, Province, Country"></textarea></div>
+
+        <div style="grid-column:span 6"><label>Order Number (Online Shop)</label><input id="orderNumber" placeholder="SHOP-00001"></div>
+        <div style="grid-column:span 6"><label>Seller (tiny)</label><input id="sellerInfo" placeholder="Your Shop Name, Phone"></div>
+      </div>
+
+      <div class="row" style="margin-top:10px">
+        <div style="grid-column:span 6">
+          <label>Order Type</label>
+          <div style="display:flex;gap:10px;margin-top:6px">
+            <label class="pill"><input type="radio" name="orderType" value="Self Pickup" checked> Self Pickup</label>
+            <label class="pill"><input type="radio" name="orderType" value="Delivery"> Delivery</label>
+          </div>
+        </div>
+        <div style="grid-column:span 6">
+          <label>Delivery Company</label>
+          <select id="deliveryCompany"></select>
+        </div>
+      </div>
+
+      <div class="row" style="margin-top:10px">
+        <div style="grid-column:span 6"><label>Tracking No.</label><input id="tracking" placeholder="TRK123456789TH"></div>
+        <div style="grid-column:span 3"><label>Delivery Fee</label><input id="deliveryFee" type="number" step="0.01" placeholder="0.00"></div>
+        <div style="grid-column:span 3"><label>Discount (Amount)</label><input id="discountAmt" type="number" step="0.01" placeholder="0.00"></div>
+      </div>
+
+      <div class="row" style="margin-top:10px">
+        <div style="grid-column:span 12"><label>Note (Invoice မှာ ပြမယ့် စာ)</label>
+          <textarea id="noteInput" placeholder="e.g., Deliver with care / Do not fold / Happy Birthday…"></textarea></div>
+      </div>
+
+      <hr style="border:0;border-top:1px dashed #233455;margin:14px 0">
+
+      <h2>Products</h2>
+      <div class="row">
+        <div style="grid-column:span 2"><label>Code</label><input id="pCode" placeholder="P001"></div>
+        <div style="grid-column:span 4"><label>Name</label><input id="pName" placeholder="Product Name"></div>
+        <div style="grid-column:span 2"><label>Color</label><input id="pColor" placeholder="Red/Black..."></div>
+        <div style="grid-column:span 2"><label>Size</label><input id="pSize" placeholder="S/M/L, 128GB..."></div>
+        <div style="grid-column:span 1"><label>Qty</label><input id="pQty" type="number" min="1" value="1" style="padding:12px 14px;font-size:16px"></div>
+        <div style="grid-column:span 1"><label>Sale Price</label><input id="pPrice" type="number" step="0.01" placeholder="0.00" style="padding:12px 14px;font-size:16px"></div>
+      </div>
+      <div class="toolbar" style="margin-top:10px">
+        <button class="btn primary" id="btnAdd">Add Item</button>
+        <button class="btn" id="btnClearItems">Clear Items</button>
+      </div>
+
+      <table id="itemsTable">
+        <thead><tr>
+          <th style="width:90px">Code</th><th>Name</th><th style="width:100px">Color</th>
+          <th style="width:100px">Size</th><th class="right" style="width:90px">Qty</th>
+          <th class="right" style="width:140px">Unit</th><th class="right" style="width:140px">Total</th>
+          <th class="right no-print" style="width:60px">—</th>
+        </tr></thead>
+        <tbody></tbody>
+        <tfoot>
+          <tr><td colspan="6" class="right">Subtotal</td><td class="right" id="subtotal">0.00</td><td></td></tr>
+          <tr><td colspan="6" class="right">Delivery Fee</td><td class="right" id="fee">0.00</td><td></td></tr>
+          <tr><td colspan="6" class="right">Discount</td><td class="right" id="disc">- 0.00</td><td></td></tr>
+          <tr><td colspan="6" class="right">Grand Total</td><td class="right" id="grand">0.00</td><td></td></tr>
+        </tfoot>
+      </table>
+    </div></div>
+
+    <!-- Right: Invoice -->
+    <div class="card"><div class="body">
+      <h2>Invoice Preview</h2>
+      <div id="invoiceCapture" class="invoiceBox">
+        <div id="invoicePreview"></div>
+        <div class="footerThanks">Thank you for your purchase! ကျေးဇူးတင်ပါတယ်။</div>
+      </div>
+    </div></div>
+  </div>
+
+  <!-- Settings Modal -->
+  <div class="modal" id="settingsModal">
+    <div class="dialog" style="max-width:760px">
+      <h3>Settings (Cloud, Admin only)</h3>
+      <div class="grid2">
+        <div>
+          <label>Delivery Companies (one per line)</label>
+          <textarea id="setCompanies" style="min-height:180px"></textarea>
+        </div>
+        <div>
+          <label>Staff IDs (one per line)</label>
+          <textarea id="setStaffIds" style="min-height:180px"></textarea>
+        </div>
+      </div>
+      <div style="text-align:right;margin-top:10px">
+        <button class="btn" id="btnCloseSettings">Close</button>
+        <button class="btn primary" id="btnSaveSettings">Save</button>
+      </div>
+      <div class="muted" id="settingsLog" style="margin-top:8px"></div>
+    </div>
+  </div>
+
+  <!-- Reports Modal -->
+  <div class="modal" id="reportsModal">
+    <div class="dialog">
+      <h3>Sales Reports</h3>
+      <div class="grid3">
+        <div><label>From</label><input id="repFrom" type="date"></div>
+        <div><label>To</label><input id="repTo" type="date"></div>
+        <div><label>Order Number (contains)</label><input id="repOrderNo" placeholder="SHOP-"></div>
+      </div>
+      <div class="grid3" style="margin-top:8px">
+        <div><label>Staff</label><select id="repStaff"><option value="">All</option></select></div>
+        <div><label>Delivery Company</label><select id="repCo"><option value="">All</option></select></div>
+        <div style="display:flex;align-items:end;gap:8px">
+          <button class="btn" id="btnRunReport">Run</button>
+          <button class="btn" id="btnExportCSV">Export CSV</button>
+        </div>
+      </div>
+      <div class="grid3" style="margin-top:12px">
+        <div class="card" style="padding:12px"><div class="muted">Orders</div><div id="kOrders" style="font-weight:800;font-size:18px">0</div></div>
+        <div class="card" style="padding:12px"><div class="muted">Grand Total</div><div id="kRevenue" style="font-weight:800;font-size:18px">0</div></div>
+        <div class="card" style="padding:12px"><div class="muted">Discount</div><div id="kDiscount" style="font-weight:800;font-size:18px">0</div></div>
+      </div>
+      <div class="grid2" style="margin-top:12px">
+        <div>
+          <h4 class="muted">By Staff</h4>
+          <div class="scroll"><table id="tabStaff"><thead><tr><th>Staff</th><th class="right">Orders</th><th class="right">Revenue</th></tr></thead><tbody></tbody></table></div>
+          <h4 class="muted" style="margin-top:12px">By Delivery Company</h4>
+          <div class="scroll"><table id="tabCo"><thead><tr><th>Company</th><th class="right">Orders</th><th class="right">Revenue</th></tr></thead><tbody></tbody></table></div>
+        </div>
+        <div>
+          <h4 class="muted">Top Products</h4>
+          <div class="scroll"><table id="tabProd"><thead><tr><th>Product</th><th class="right">Qty</th><th class="right">Sales</th></tr></thead><tbody></tbody></table></div>
+        </div>
+      </div>
+      <div style="text-align:right;margin-top:12px"><button class="btn" id="btnCloseReport">Close</button></div>
+    </div>
+  </div>
+
+  <!-- Auth Modal -->
+  <div class="modal" id="authModal">
+    <div class="dialog" style="max-width:420px">
+      <h3>Sign in</h3>
+      <label>Email</label><input id="authEmail" type="email" placeholder="staff@yourshop.com">
+      <label>Password</label><input id="authPass" type="password" placeholder="••••••••">
+      <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:10px">
+        <button class="btn primary" id="btnSignIn">Sign in</button>
+      </div>
+      <div class="muted" style="margin-top:8px">* Users are managed in Firebase Console → Authentication → Users.</div>
+    </div>
+  </div>
+
+<script>
+/* ===== Helpers ===== */
+const el=s=>document.querySelector(s), els=s=>document.querySelectorAll(s);
+const state={currency:'MMK', items:[], invoiceNo:invNo()};
+function invNo(){const d=new Date();return `INV-${d.getFullYear()}-${Math.floor(Math.random()*90000+10000)}`;}
+function fmt(n){const map={MMK:'en-US',THB:'th-TH',USD:'en-US'};return new Intl.NumberFormat(map[state.currency]||'en-US',{style:'currency',currency:state.currency}).format(Number(n||0));}
+function tick(){el('#invoiceNo').textContent=state.invoiceNo; el('#dateTime').textContent=new Date().toLocaleString();}
+setInterval(tick,1000); tick();
+
+/* ===== Settings (Cloud realtime + local fallback) ===== */
+const SETTINGS_KEY='POS_SETTINGS_V3';
+const settings={deliveryCompanies:['Kerry Express','J&T','BeeXpress'], staffIds:['ST-0001','ST-0002']};
+try{Object.assign(settings, JSON.parse(localStorage.getItem(SETTINGS_KEY)||'{}'));}catch(_){}
+function saveSettingsLocal(){localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));}
+function renderCompanies(){ const sel=el('#deliveryCompany'); sel.innerHTML='<option value="">— Select Company —</option>' + settings.deliveryCompanies.map(c=>`<option>${c}</option>`).join(''); }
+function renderStaffIds(){ const sel=el('#staffId'); sel.innerHTML='<option value="">— Select Staff —</option>' + settings.staffIds.map(s=>`<option>${s}</option>`).join(''); }
+renderCompanies(); renderStaffIds();
+
+/* ===== Firebase Config (မင်း Project အတွက်) ===== */
+const firebaseConfig={ /* Your provided config */
+  apiKey:"AIzaSyAW0VAorCd6OHrBR2qqpdZwI92mdIRbtZI",
+  authDomain:"pos-v1-a03b9.firebaseapp.com",
+  projectId:"pos-v1-a03b9",
+  storageBucket:"pos-v1-a03b9.firebasestorage.app",
+  messagingSenderId:"301333181261",
+  appId:"1:301333181261:web:f739e2adc4273edf2bbd04",
+  measurementId:"G-4QGK267QBR"
+};
+firebase.initializeApp(firebaseConfig);
+const auth=firebase.auth();
+const db=firebase.firestore();
+
+/* ===== Realtime settings listener (Admin & Staff အားလုံး) ===== */
+let unsubSettings=null;
+async function startSettingsListener(){
+  if(unsubSettings) { try{unsubSettings();}catch(e){} }
+  unsubSettings = db.collection('settings').doc('global').onSnapshot(snap=>{
+    if(snap.exists){
+      const d=snap.data()||{};
+      settings.deliveryCompanies = Array.isArray(d.deliveryCompanies)?d.deliveryCompanies:[];
+      settings.staffIds          = Array.isArray(d.staffIds)?d.staffIds:[];
+      saveSettingsLocal();
+      renderCompanies(); renderStaffIds();
+      const log=el('#settingsLog'); if(log) log.textContent='Realtime sync ✓';
+    }else{
+      const log=el('#settingsLog'); if(log) log.textContent='No settings/global doc yet. Admin can save to create.';
+    }
+  }, err => {
+    const log=el('#settingsLog'); if(log) log.textContent='Settings listener error: '+err.message;
+  });
+}
+
+/* ===== Role & Auth ===== */
+async function resolveRole(uid){
+  try{
+    const snap=await db.collection('roles').doc(uid).get();
+    const role=(snap.exists && snap.data().role)||'staff';
+    window.__role=role; window.__isAdmin=(role==='admin');
+    el('#whoRole').textContent=`(${role})`;
+    el('#btnSaveCloud').disabled=false; // staff can create orders
+    el('#btnLoadCloud').style.display = window.__isAdmin ? '' : 'none';
+    el('#btnReports').style.display   = window.__isAdmin ? '' : 'none';
+    el('#btnSettings').style.display  = window.__isAdmin ? '' : 'none';
+    el('#staffBadge').style.display   = window.__isAdmin ? 'none' : 'inline-block';
+    // realtime settings listener
+    startSettingsListener();
+  }catch(e){
+    console.warn('role fetch failed',e); el('#whoRole').textContent='(role?)';
+  }
+}
+auth.onAuthStateChanged(u=>{
+  if(u){
+    el('#who').textContent=u.email||u.uid;
+    el('#cloudState').textContent='online';
+    el('#authModal').classList.remove('open');
+    resolveRole(u.uid);
+  }else{
+    el('#who').textContent='—'; el('#whoRole').textContent='';
+    el('#cloudState').textContent='signed-out';
+    el('#btnSaveCloud').disabled=true; el('#btnLoadCloud').style.display='none'; el('#btnReports').style.display='none'; el('#btnSettings').style.display='none';
+    el('#authModal').classList.add('open');
+  }
+});
+el('#btnSignIn').onclick=async()=>{
+  const email=el('#authEmail').value.trim(), pass=el('#authPass').value;
+  if(!email||!pass){alert('Email/Password ဖြည့်ပါ');return;}
+  try{ await auth.signInWithEmailAndPassword(email,pass); }catch(e){ alert('Sign-in failed: '+e.message); }
+};
+
+/* ===== Items & totals ===== */
+function totals(){
+  let subtotal=state.items.reduce((s,it)=>s+Number(it.qty)*Number(it.price),0);
+  const fee=Number(el('#deliveryFee').value||0);
+  const disc=Number(el('#discountAmt').value||0);
+  const grand=subtotal+fee-disc;
+  return {subtotal,fee,disc,grand:Math.max(grand,0)};
+}
+function renderItems(){
+  const tb=el('#itemsTable tbody'); tb.innerHTML='';
+  state.items.forEach((it,i)=>{
+    const tr=document.createElement('tr');
+    tr.innerHTML=`<td>${it.code||''}</td><td>${it.name||''}</td><td>${it.color||''}</td><td>${it.size||''}</td><td class="right">${it.qty}</td><td class="right">${fmt(it.price)}</td><td class="right">${fmt(it.qty*it.price)}</td><td class="right no-print"><button class="btn" data-del="${i}">Del</button></td>`;
+    tb.appendChild(tr);
+  });
+  const t=totals(); el('#subtotal').textContent=fmt(t.subtotal); el('#fee').textContent=fmt(t.fee); el('#disc').textContent=`- ${fmt(t.disc)}`; el('#grand').textContent=fmt(t.grand);
+  renderPreview();
+}
+function renderPreview(){
+  const staff=el('#staffId').value.trim(), name=el('#custName').value.trim(), phone=el('#custPhone').value.trim(), fbk=el('#custFB').value.trim(), addr=el('#custAddr').value.trim();
+  const seller=el('#sellerInfo').value.trim()||'Online Shop', orderType=[...els('input[name="orderType"]')].find(r=>r.checked)?.value||'Self Pickup', company=el('#deliveryCompany').value, tracking=el('#tracking').value.trim();
+  const orderNo=el('#orderNumber').value.trim(); const noteTxt=el('#noteInput').value; const t=totals();
+  const rows=state.items.map(it=>`<tr><td>${it.code||''}</td><td><div>${it.name||''}</div><div class="muted" style="font-size:12px">Color: ${it.color||'-'} | Size: ${it.size||'-'}</div></td><td class="right">${it.qty}</td><td class="right">${fmt(it.price)}</td><td class="right">${fmt(it.qty*it.price)}</td></tr>`).join('');
+  el('#invoicePreview').innerHTML=`
+  <div style="display:flex;justify-content:space-between;gap:12px">
+    <div><div style="font-weight:800;font-size:18px">INVOICE</div>
+      <div class="muted">Invoice No: <b>${state.invoiceNo}</b></div>
+      <div class="muted">Date/Time: <b>${new Date().toLocaleString()}</b></div>
+      <div class="muted">Order No: <b>${orderNo||'-'}</b></div>
+      <div class="muted">Currency: <b>${state.currency}</b></div></div>
+    <div style="text-align:right">
+      <div class="muted" style="font-size:12px">Seller</div>
+      <div style="font-weight:700">${seller}</div>
+      <div><b>Staff:</b> ${staff||'-'}</div>
+      <div><b>Order:</b> ${orderType}${orderType==='Delivery' ? ` • ${company||'-'}`:''}</div>
+      ${orderType==='Delivery'? `<div><b>Tracking:</b> ${tracking||'-'}</div>`:''}
+    </div>
+  </div>
+  <div style="margin-top:10px;border:1px dashed #233455;border-radius:10px;padding:10px">
+    <div style="font-weight:700">Customer</div>
+    <div>${name||'-'}</div>
+    <div class="muted">${phone||''}</div>
+    ${fbk? `<div class="muted">FB: ${fbk}</div>`:''}
+    <div class="muted" style="white-space:pre-wrap">${addr||''}</div>
+  </div>
+  <table style="width:100%;border-collapse:collapse;margin-top:10px">
+    <thead><tr><th style="text-align:left;border-bottom:1px solid #233455;padding:8px">Code</th><th style="text-align:left;border-bottom:1px solid #233455;padding:8px">Product</th><th style="text-align:right;border-bottom:1px solid #233455;padding:8px">Qty</th><th style="text-align:right;border-bottom:1px solid #233455;padding:8px">Unit</th><th style="text-align:right;border-bottom:1px solid #233455;padding:8px">Total</th></tr></thead>
+    <tbody>${rows || `<tr><td colspan="5" class="muted" style="padding:10px">No items yet</td></tr>`}</tbody>
+    <tfoot>
+      <tr><td colspan="4" style="text-align:right;padding:8px">Subtotal</td><td style="text-align:right;padding:8px">${fmt(t.subtotal)}</td></tr>
+      <tr><td colspan="4" style="text-align:right;padding:8px">Delivery Fee</td><td style="text-align:right;padding:8px">${fmt(t.fee)}</td></tr>
+      <tr><td colspan="4" style="text-align:right;padding:8px">Discount</td><td style="text-align:right;padding:8px">- ${fmt(t.disc)}</td></tr>
+      <tr><td colspan="4" style="text-align:right;padding:8px;font-weight:800">Grand Total</td><td style="text-align:right;padding:8px;font-weight:800">${fmt(t.grand)}</td></tr>
+    </tfoot>
+  </table>
+  <div style="margin-top:10px;border:1px dashed #233455;border-radius:10px;padding:10px">
+    <div style="font-weight:700">Note</div>
+    <div class="muted" style="white-space:pre-wrap">${noteTxt||'-'}</div>
+  </div>`;
+}
+['#staffId','#custName','#custPhone','#custFB','#custAddr','#deliveryCompany','#tracking','#deliveryFee','#discountAmt','#sellerInfo','#noteInput','#orderNumber'].forEach(s=> el(s).addEventListener('input', renderPreview));
+els('input[name="orderType"]').forEach(r=> r.addEventListener('change', renderPreview));
+
+/* ===== Products handlers ===== */
+el('#btnAdd').onclick=()=>{
+  const code=el('#pCode').value.trim().toUpperCase(), name=el('#pName').value.trim(), color=el('#pColor').value.trim(), size=el('#pSize').value.trim();
+  const qty=Number(el('#pQty').value||0), price=Number(el('#pPrice').value||0);
+  if(!name||qty<=0||price<=0){alert('Fill product name, qty>0, price>0');return;}
+  state.items.push({code,name,color,size,qty,price});
+  ['#pCode','#pName','#pColor','#pSize','#pPrice'].forEach(s=> el(s).value=''); el('#pQty').value=1;
+  renderItems();
+};
+el('#btnClearItems').onclick=()=>{ if(confirm('Clear all items?')){ state.items=[]; renderItems(); }};
+el('#itemsTable').addEventListener('click',e=>{ const b=e.target.closest('button[data-del]'); if(b){ state.items.splice(Number(b.dataset.del),1); renderItems(); }});
+el('#currency').onchange=e=>{state.currency=e.target.value; renderItems();};
+
+/* ===== New / Print / JPEG ===== */
+el('#btnNew').onclick=()=>{
+  if(!confirm('Start a new order?')) return;
+  state.items=[]; state.invoiceNo=invNo();
+  document.querySelectorAll('input,textarea,select').forEach(x=>{ if(!['currency'].includes(x.id)) x.value=''; });
+  el('#pQty').value=1; renderItems(); tick();
+};
+el('#btnPrint').onclick=()=>window.print();
+el('#btnJPEG').onclick=async()=>{
+  const node=el('#invoiceCapture'); renderPreview();
+  const canvas=await html2canvas(node,{scale:2, backgroundColor:'#0b1426'});
+  const a=document.createElement('a'); a.href=canvas.toDataURL('image/jpeg',0.95);
+  a.download=`${el('#invoiceNo').textContent||'invoice'}.jpg`; a.click();
+};
+
+/* ===== Save/Load Orders ===== */
+function collectOrder(){ return {
+  invoiceNo:state.invoiceNo,currency:state.currency,date:new Date().toISOString(),
+  staffId:el('#staffId').value.trim(),
+  customer:{name:el('#custName').value.trim(),phone:el('#custPhone').value.trim(),facebook:el('#custFB').value.trim(),address:el('#custAddr').value.trim()},
+  orderType:[...els('input[name="orderType"]')].find(r=>r.checked)?.value||'Self Pickup',
+  deliveryCompany:el('#deliveryCompany').value,tracking:el('#tracking').value.trim(),
+  discountAmt:Number(el('#discountAmt').value||0),deliveryFee:Number(el('#deliveryFee').value||0),sellerInfo:el('#sellerInfo').value.trim(),
+  orderNumber:el('#orderNumber').value.trim(),
+  note:el('#noteInput').value, items:state.items, totals:totals()
+};}
+el('#btnSaveCloud').onclick=async()=>{
+  if(!auth.currentUser){alert('Please sign in first.'); return;}
+  try{
+    const doc=await db.collection('orders').add(collectOrder());
+    el('#orderId').value=doc.id; alert('Saved: '+doc.id);
+  }catch(e){ alert('Save failed: '+e.message); }
+};
+el('#btnLoadCloud').onclick=async()=>{
+  if(!auth.currentUser){alert('Please sign in first.'); return;}
+  if(!window.__isAdmin){alert('Admin only'); return;}
+  const id=prompt('Enter Order ID'); if(!id) return;
+  try{
+    const doc=await db.collection('orders').doc(id).get();
+    if(!doc.exists){alert('Not found'); return;}
+    const o=doc.data();
+    state.invoiceNo=o.invoiceNo||invNo(); state.currency=o.currency||'MMK'; el('#currency').value=state.currency;
+    el('#staffId').value=o.staffId||''; el('#custName').value=o.customer?.name||''; el('#custPhone').value=o.customer?.phone||''; el('#custFB').value=o.customer?.facebook||''; el('#custAddr').value=o.customer?.address||'';
+    const ot=o.orderType||'Self Pickup'; els('input[name="orderType"]').forEach(r=> r.checked=(r.value===ot));
+    el('#deliveryCompany').value=o.deliveryCompany||''; el('#tracking').value=o.tracking||''; el('#discountAmt').value=o.discountAmt||0; el('#deliveryFee').value=o.deliveryFee||0; el('#sellerInfo').value=o.sellerInfo||''; el('#noteInput').value=o.note||''; el('#orderNumber').value=o.orderNumber||'';
+    state.items=Array.isArray(o.items)?o.items:[]; renderItems(); tick(); alert('Loaded.');
+  }catch(e){ alert('Load failed: '+e.message); }
+};
+
+/* ===== Reports (admin only) ===== */
+function setRepFiltersFromSettings(){
+  const s=el('#repStaff'); s.innerHTML='<option value="">All</option>'+settings.staffIds.map(v=>`<option>${v}</option>`).join('');
+  const c=el('#repCo'); c.innerHTML='<option value="">All</option>'+settings.deliveryCompanies.map(v=>`<option>${v}</option>`).join('');
+}
+el('#btnReports').onclick=()=>{ if(!window.__isAdmin){alert('Admin only');return;} setRepFiltersFromSettings(); el('#reportsModal').classList.add('open'); };
+el('#btnCloseReport').onclick=()=> el('#reportsModal').classList.remove('open');
+
+function sum(arr, fn){return arr.reduce((s,x)=>s+fn(x),0);}
+function toCSV(rows){ return rows.map(r=> r.map(x=>`"${String(x).replace(/"/g,'""')}"`).join(',')).join('\n'); }
+
+async function runReport(){
+  if(!auth.currentUser || !window.__isAdmin){ alert('Admin only'); return; }
+  const from=el('#repFrom').value ? new Date(el('#repFrom').value) : null;
+  const to=el('#repTo').value ? new Date(el('#repTo').value) : null;
+  if(to) to.setDate(to.getDate()+1); // inclusive
+  let q=db.collection('orders').orderBy('date','desc');
+  if(from) q=q.where('date','>=',from.toISOString());
+  if(to)   q=q.where('date','<=',to.toISOString());
+  const snap=await q.get();
+  let rows=snap.docs.map(d=>({id:d.id, ...d.data()}));
+
+  const fStaff=el('#repStaff').value.trim();
+  const fCo=el('#repCo').value.trim();
+  const fOrder=el('#repOrderNo').value.trim().toLowerCase();
+  rows=rows.filter(r=> (!fStaff || (r.staffId||'')===fStaff)
+                    && (!fCo || (r.deliveryCompany||'')===fCo)
+                    && (!fOrder || (r.orderNumber||'').toLowerCase().includes(fOrder)) );
+
+  el('#kOrders').textContent=rows.length;
+  el('#kRevenue').textContent=fmt(sum(rows,x=> (x.totals?.grand)||0 ));
+  el('#kDiscount').textContent=fmt(sum(rows,x=> Number(x.discountAmt||0) ));
+
+  const staffMap={}, coMap={}, pMap={};
+  rows.forEach(r=>{
+    const ks=r.staffId||'-'; (staffMap[ks]??={orders:0,revenue:0}); staffMap[ks].orders++; staffMap[ks].revenue+=(r.totals?.grand)||0;
+    const kc=r.deliveryCompany||'-'; (coMap[kc]??={orders:0,revenue:0}); coMap[kc].orders++; coMap[kc].revenue+=(r.totals?.grand)||0;
+    (r.items||[]).forEach(it=>{ const k=(it.name||'-')+(it.code?` [${it.code}]`:'' );
+      (pMap[k]??={qty:0,sales:0}); pMap[k].qty+=Number(it.qty||0); pMap[k].sales+=Number(it.qty||0)*Number(it.price||0);
+    });
+  });
+
+  const stBody=el('#tabStaff tbody'); stBody.innerHTML='';
+  Object.entries(staffMap).forEach(([k,v])=>{ const tr=document.createElement('tr'); tr.innerHTML=`<td>${k}</td><td class="right">${v.orders}</td><td class="right">${fmt(v.revenue)}</td>`; stBody.appendChild(tr); });
+
+  const coBody=el('#tabCo tbody'); coBody.innerHTML='';
+  Object.entries(coMap).forEach(([k,v])=>{ const tr=document.createElement('tr'); tr.innerHTML=`<td>${k}</td><td class="right">${v.orders}</td><td class="right">${fmt(v.revenue)}</td>`; coBody.appendChild(tr); });
+
+  const pBody=el('#tabProd tbody'); pBody.innerHTML='';
+  Object.entries(pMap).sort((a,b)=>b[1].sales-a[1].sales).slice(0,200).forEach(([k,v])=>{ const tr=document.createElement('tr'); tr.innerHTML=`<td>${k}</td><td class="right">${v.qty}</td><td class="right">${fmt(v.sales)}</td>`; pBody.appendChild(tr); });
+
+  window.__lastReportRows = rows;
+}
+el('#btnRunReport').onclick=runReport;
+el('#btnExportCSV').onclick=()=>{
+  const rows = window.__lastReportRows || [];
+  const csv=[
+    ["docId","date","staffId","orderNumber","deliveryCompany","subtotal","fee","discount","grand","customerName","itemsCount"],
+    ...rows.map(r=>[
+      r.id, r.date, r.staffId||"", r.orderNumber||"", r.deliveryCompany||"",
+      r.totals?.subtotal||0, r.totals?.fee||0, r.totals?.disc||r.discountAmt||0, r.totals?.grand||0,
+      r.customer?.name||"", Array.isArray(r.items)?r.items.length:0
+    ])
+  ];
+  const blob = new Blob([toCSV(csv)], {type:"text/csv"});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download="report.csv"; a.click();
+};
+
+/* ===== Hook inputs ===== */
+['#deliveryFee','#discountAmt','#sellerInfo','#noteInput','#orderNumber'].forEach(s=> el(s).addEventListener('input', renderPreview));
+['#staffId','#custName','#custPhone','#custFB','#custAddr','#deliveryCompany','#tracking'].forEach(s=> el(s).addEventListener('input', renderPreview));
+els('input[name="orderType"]').forEach(r=> r.addEventListener('change', renderPreview));
+renderItems(); renderPreview();
+</script>
+</body>
+</html>
